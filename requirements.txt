@@ -1,0 +1,7 @@
+altair
+Markdown
+matplotlib
+numpy
+pandas
+plotly
+streamlit
