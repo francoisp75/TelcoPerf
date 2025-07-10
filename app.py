@@ -4,8 +4,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 import re
+import numpy as np
 
-@st.cache
+@st.cache_data
 def load_data():
     return pd.read_excel("Base_v4.xlsx", sheet_name="CA")
 
@@ -78,12 +79,14 @@ for op in selected_operators:
     df_plot = pd.DataFrame(data)
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=df_plot['Trimestre'], y=df_plot['Europe'], name="Europe", marker_color="blue",
+    fig.add_trace(go.Bar(x=df_plot['Trimestre'], y=df_plot['Europe'], name="Europe", marker_color="blue",text=[f"{val * 100:.1f}%" for val in df_plot['Europe']],
     textposition="outside"))
-    fig.add_trace(go.Bar(x=df_plot['Trimestre'], y=df_plot['Non Europe'], name="Non-Europe", marker_color="deeppink",
+    fig.add_trace(go.Bar(x=df_plot['Trimestre'], y=df_plot['Non Europe'], name="Non-Europe", marker_color="deeppink",text=[f"{val * 100:.1f}%" for val in df_plot['Non Europe']],
     textposition="outside"))
-    fig.add_trace(go.Scatter(x=df_plot['Trimestre'], y=df_plot['Group'], name="Groupe", mode="lines+markers", line=dict(color="black", width=3,
-)))
+    fig.add_trace(go.Scatter(x=df_plot['Trimestre'], y=df_plot['Group'], name="Groupe", mode="lines+markers+text", line=dict(color="black", width=3),text=(df_plot['Group'] * 100).round(1).astype(str) + '%',
+    textposition="top center"
+
+))
 
     fig.update_layout(
         title=f"{op} - Croissance par trimestre",
@@ -108,7 +111,7 @@ operator_colors = {
     "O": "orange",
     "D": "deeppink",
     "B": "purple",
-    "TEF": "blue",
+    "TE": "blue",
     "V": "red",
     "T": "green"
 }
@@ -199,139 +202,91 @@ else:
         st.plotly_chart(fig, use_container_width=True)
 
 
-"""
-# ---- Config ----
-#st.set_page_config(layout="wide")
 
-# ---- Chargement des données ----
-@st.cache
-def load_data():
-    df_ebitda = pd.read_excel("Base_v4.xlsx", sheet_name="EBITDA")
-    return df_ebitda
-
-df_ebitda = load_data()
-
-# ---- Détection des colonnes trimestre ----
-quarter_cols = [col for col in df_ebitda.columns if isinstance(col, str) and col.endswith("Q25") or col.endswith("Q24") or col.endswith("Q23")]
-
-# Dernier trimestre
-last_quarter = quarter_cols[-1]
-
-# ---- Filtrage des données EBITDAal rate groupe ----
-df_plot = df_ebitda[
-    (df_ebitda["indicator"] == "EBITDAal rate") &
-    (df_ebitda["country"].str.lower() == "group")  # filtre sur country = "Group"
-].copy()
-
-# ---- Traitement des valeurs ----
-df_plot["EBITDAal Rate (%)"] = pd.to_numeric(df_plot[last_quarter], errors="coerce") * 100
-df_plot.dropna(subset=["EBITDAal Rate (%)"], inplace=True)
-df_plot["EBITDAal Rate (%)"] = df_plot["EBITDAal Rate (%)"].round(2)
-df_plot["label"] = df_plot["EBITDAal Rate (%)"].astype(str) + "%"
-
-# ---- Gestion de la superposition : décalage horizontal (jitter) ----
-value_counts = df_plot["EBITDAal Rate (%)"].value_counts()
-df_plot["dup_count"] = df_plot["EBITDAal Rate (%)"].map(value_counts)
-
-def jitter_offset(row):
-    if row["dup_count"] > 1:
-        matches = df_plot[df_plot["EBITDAal Rate (%)"] == row["EBITDAal Rate (%)"]].index
-        idx = list(matches).index(row.name)
-        return -0.15 + 0.15 * idx
-    return 0.0
-
-df_plot["x_offset"] = df_plot.apply(jitter_offset, axis=1)
-
-# ---- Scatter Plot ----
-fig = px.scatter(
-    df_plot,
-    x=df_plot["x_offset"],
-    y="EBITDAal Rate (%)",
-    color="operator",
-    text="label",
-    height=600
-)
-
-fig.update_traces(
-    marker=dict(size=14),
-    textposition="top center"
-)
-
-fig.update_layout(
-    showlegend=True,
-    xaxis=dict(
-        showticklabels=False,
-        title=""
-    ),
-    yaxis=dict(
-        title="EBITDAal Rate (%)",
-        tickformat=".2f"
-    )
-)
-
-st.header(f"Taux d'EBITDAal - {last_quarter}")
-st.plotly_chart(fig, use_container_width=True)
-
-
-"""
 # Charger les données
-@st.cache
+@st.cache_data
 def load_ebitda_data():
     return pd.read_excel("Base_v4.xlsx", sheet_name="EBITDA")
 
 df_ebitda = load_ebitda_data()
-
-# Nettoyer les colonnes
 df_ebitda.columns = df_ebitda.columns.str.strip()
 
-# Filtrer sur EBITDAal rate au niveau Groupe
+# Filtrer les données pertinentes
 df_rate = df_ebitda[
     (df_ebitda["indicator"].astype(str).str.strip().str.lower() == "ebitdaal rate") &
     (df_ebitda["scope"].astype(str).str.strip().str.lower() == "group")
 ].copy()
 
 # Détecter les colonnes de trimestre
-quarter_cols = [col for col in df_rate.columns if isinstance(col, str) and col[:2] in ["1Q", "2Q", "3Q", "4Q"]]
+quarter_cols = [col for col in df_rate.columns if isinstance(col, str) and re.match(r"\dQ\d\d", col)]
+
 if not quarter_cols:
-    st.error("Aucune colonne de trimestre détectée.")
+    #st.warning("Aucune colonne de trimestre détectée.")
     st.stop()
 
-# Dernier trimestre
-latest_quarter = quarter_cols[-1]
-st.subheader(f"Taux d'EBITDAal – Trimestre : **{latest_quarter}**")
+# Identifier le dernier trimestre et celui N-1
+quarter_cols_sorted = sorted(quarter_cols, key=lambda x: (int(x[-2:]), int(x[0])))
+latest_quarter = quarter_cols_sorted[-1]
+prev_quarter = f"{latest_quarter[0]}Q{int(latest_quarter[-2:]) - 1:02d}"  # ex: 1Q25 -> 1Q24
+
+st.subheader(f"Taux d'EBITDAal – **{latest_quarter}**")
 
 # Nettoyage des valeurs
-df_rate[latest_quarter] = (
-    df_rate[latest_quarter].astype(str)
-    .str.replace("%", "", regex=False)
-    .str.replace(",", ".", regex=False)
-    .str.strip()
+for col in [latest_quarter, prev_quarter]:
+    if col in df_rate.columns:
+        df_rate[col] = (
+            df_rate[col].astype(str)
+            .str.replace("%", "", regex=False)
+            .str.replace(",", ".", regex=False)
+            .str.strip()
+        )
+        df_rate[col] = pd.to_numeric(df_rate[col], errors="coerce")
+    else:
+        df_rate[col] = None
+
+# Préparer données
+df_plot = df_rate[["operator", latest_quarter, prev_quarter]].dropna(subset=[latest_quarter])
+df_plot["current"] = df_plot[latest_quarter]
+df_plot["previous"] = df_plot[prev_quarter]
+df_plot["variation"] = df_plot["current"] - df_plot["previous"]
+df_plot["rate_percent"] = (df_plot["current"] * 100).round(2)
+
+# Couleurs personnalisées
+operator_colors = {
+    "O": "orange", "D": "deeppink", "B": "purple",
+    "TE": "blue", "V": "red", "T": "green"
+}
+df_plot["color"] = df_plot["operator"].map(operator_colors).fillna("gray")
+
+# Ajouter labels avec variation
+df_plot["label"] = df_plot.apply(
+    lambda row: f"{row['operator']}<br>{row['rate_percent']:.2f}%"
+    + (f"<br>({row['variation']*100:+.2f} pts)" if pd.notnull(row['variation']) else ""),
+    axis=1
 )
-df_rate[latest_quarter] = pd.to_numeric(df_rate[latest_quarter], errors="coerce")
 
-# Filtrer et préparer
-df_plot = df_rate[["operator", latest_quarter]].dropna()
-df_plot["EBITDAal Rate (%)"] = (df_plot[latest_quarter] * 100).round(2)
-df_plot["label"] = df_plot["EBITDAal Rate (%)"].astype(str) + "%"
+# Ajouter léger décalage horizontal (jitter) pour éviter superposition
+jitter_map = df_plot.groupby("rate_percent").cumcount()
+jitter = 0.04
+df_plot["x"] = jitter_map * jitter - jitter * jitter_map.max() / 2
 
-if df_plot.empty:
-    st.warning("Aucune donnée à afficher pour ce trimestre.")
-else:
-    # Afficher scatter plot vertical
-    fig = px.scatter(
-        df_plot,
-        x=[""] * len(df_plot),
-        y="EBITDAal Rate (%)",
-        color="operator",
-        text="label",
-        height=600
-    )
-    fig.update_traces(marker=dict(size=14), textposition="top center")
-    fig.update_layout(
-        showlegend=True,
-        yaxis_title="",
-        xaxis_title="",
-        xaxis=dict(showticklabels=False),
-        yaxis=dict(showticklabels=False)
-    )
-    st.plotly_chart(fig, use_container_width=True)
+# Afficher scatter
+fig = px.scatter(
+    df_plot,
+    x="x",
+    y="rate_percent",
+    color="operator",
+    color_discrete_map=operator_colors,
+    text="label",
+    height=650
+)
+fig.update_traces(marker=dict(size=14), textposition="top center")
+fig.update_layout(
+    showlegend=True,
+    yaxis_title="Taux EBITDAal (%)",
+    xaxis=dict(showticklabels=False, showgrid=False, zeroline=False, title=None),
+    yaxis=dict(showticklabels=True, gridcolor='lightgray'),
+    plot_bgcolor='white'
+)
+
+st.plotly_chart(fig, use_container_width=True)
