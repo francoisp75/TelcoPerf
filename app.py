@@ -131,7 +131,8 @@ for op in selected_operators:
         mode='lines+markers+text',
         name=op,
         line=dict(color=operator_colors.get(op, 'gray'), width=2),
-        text=[f"{y * 100:+.1f}%" if i == len(selected_quarters)-1 and y is not None else "" for i, y in enumerate(y_values)],
+        #text=[f"{y * 100:+.1f}%" if i == len(selected_quarters)-1 and y is not None else "" for i, y in enumerate(y_values)],
+        text=["n/a" if y is None else f"{y * 100:+.1f}%" for y in y_values],
         textposition="top right"
     ))
 
@@ -139,7 +140,8 @@ fig_group.update_layout(
     title="Évolution de la croissance Groupe par opérateur",
     xaxis_title="Trimestre",
     yaxis_title="Croissance (%)",
-    yaxis_tickformat=".1f%",  # ⬅️ Affichage en pourcentage
+    yaxis_tickformat=".0%",
+    #yaxis_tickformat=".1f%",  # ⬅️ Affichage en pourcentage
     height=500
 )
 
@@ -243,6 +245,18 @@ for col in [latest_quarter, prev_quarter]:
         df_rate[col] = pd.to_numeric(df_rate[col], errors="coerce")
     else:
         df_rate[col] = None
+
+# Menu pour sélectionner les opérateurs
+all_operators = sorted(df_rate["operator"].dropna().unique())
+selected_operators = st.multiselect(
+    "Sélectionner les opérateurs à afficher :",
+    options=all_operators,
+    default=all_operators  # tu peux choisir d’en mettre moins si besoin
+)
+
+# Filtrer selon sélection
+df_rate = df_rate[df_rate["operator"].isin(selected_operators)]
+
 
 # Préparer données
 df_plot = df_rate[["operator", latest_quarter, prev_quarter]].dropna(subset=[latest_quarter])
